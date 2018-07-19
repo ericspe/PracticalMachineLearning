@@ -1,0 +1,139 @@
+---
+title: "Practical Machine Learning: Week 4 Prediction Assignment"
+author: "Eric"
+date: "July 19, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes."
+
+From the source:
+ <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har>
+ 
+
+The measures come from weareable devices and this project is about predicting the Class (A,B,C,D,E) based on the device outputs for a sample test data set as provided 
+
+## Initialize the training and testing data sets
+
+```{r files, warning=FALSE}
+
+library(caret)
+library(randomForest)
+set.seed(3433)
+
+#read the training data
+urlTraining <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(urlTraining, destfile="pml-training.csv")
+dataTrain <- read.csv("pml-training.csv", header=TRUE)
+
+#read the testing data
+urlTesting <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(urlTesting, destfile="pml-testing.csv")
+dataTest <- read.csv("pml-testing.csv", header=TRUE)
+```
+
+## Data Exploration
+
+```{r browse}
+dim(dataTrain)
+dim(dataTest)
+```
+
+The number of columns matches (160) in both dataset 
+Lets check whether they are the same:
+
+- In Training set and not in Testing set:
+```{r checktrain}
+setdiff(names(dataTrain), names(dataTest))
+```
+
+- In Testing set and not in Trainig Set:
+```{r checktest}
+setdiff(names(dataTest), names(dataTrain))
+```
+
+The predicted column "Classe" is only in the training set.
+The column "problem_id" doesn't exist is the testing set.
+
+Lets take a closer look into the data:
+
+```{r show}
+head(dataTrain)
+```
+
+Several columns seem to contain mainly no usable values (NA).
+The first columns seem not to contain any information about the measures.
+Otherwise the data is mainly numeric as expected since these are outpouts of weareable devices:
+
+```{r datatype}
+sapply(dataTrain, typeof)
+```
+
+
+Lets check for the frequency of NAs
+
+```{r NA}
+#Training data: compute frequency of NA per column
+dataTrainNA <- round(colSums(is.na(dataTrain)|dataTrain=='')/nrow(dataTrain),2)
+dataTrainNA 
+```
+
+The columns with NAs cannot get used at all since they contain almost nothing else; they will be excluded from both the training and testing data
+
+## Select the features to keep for the analysis
+
+In addition to these columns with NAs, The first 7 columns that contain non relevant data to the analysis (not measures of a device) get excluded as well
+
+```{r cols}
+#exclude all the columns with NA
+trainDataset <- dataTrain[,names(dataTrainNA)[dataTrainNA==0]]
+#exclude the first columns with user, timestamps and window data
+trainDataset <- trainDataset[, -c(1,2,3,4,5,6,7)]
+
+#Testing data: keep only the columns selected in the training set, excluding the last one that is the predicted column "classe"
+col <-  as.vector(names(trainDataset))[-53]
+testDataset <- dataTest[, col]
+```
+
+The original training data is split into training and cross validation sets in order to evaluate the accuracy of the model prediction
+
+```{r prepare}
+#split the original training data into training and cross validation sets
+inTrain = createDataPartition(trainDataset$classe, p = 3/4)[[1]]
+training = trainDataset[ inTrain,]
+xvalidation = trainDataset[-inTrain,]
+```
+
+## Build the model using the new training set
+
+Since the problem is about classification, the retained model is a Random Forest which is based on bagging to reduce the variance so that we can get good performance on the unseen data.
+The quality of the predictions is assessed against the cross validation data set (out of sample data) using a confusion matrix:
+
+```{r model}
+modFit <- randomForest(classe ~ ., data = training)
+modXValPredict <- predict(modFit, xvalidation )
+confusionMatrix(xvalidation$classe, modXValPredict)
+
+```
+
+The accuracy is good, hence we keep this model for the predictions.
+
+## Use the model to make the predictions
+
+Finally the model is applied to the original testing data set in order to make the predictions (Classe):
+
+```{r prediction}
+# make the prediction on the test data
+predict(modFit, testDataset )
+
+```
+
+Those are the numbers entered into tzhe "Course Project Prediction Quiz"."
